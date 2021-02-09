@@ -16,3 +16,4 @@ cpal = "0.13"
 hound = { git = "https://github.com/ruuda/hound.git"}
 basedrop = { git = "https://github.com/glowcoil/basedrop.git" }
 ringbuf = "0.2"
+audio-waveform-mipmap = { git = "https://github.com/RustyDAW/audio-waveform-mipmap", branch = "main" }

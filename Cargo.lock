@@ -87,6 +87,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eab1c04a571841102f5345a8fc0f6bb3d31c315dec879b5c6e42e40ce7ffa34e"
 
 [[package]]
+name = "audio-waveform-mipmap"
+version = "0.0.0"
+source = "git+https://github.com/RustyDAW/audio-waveform-mipmap?branch=main#27f1778dfcb1066a8b1bd964b9425161877bd049"
+
+[[package]]
 name = "autocfg"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2607,6 +2612,7 @@ checksum = "dd4945e4943ae02d15c13962b38a5b1e81eadd4b71214eee75af64a4d6a4fd64"
 name = "wav_viewer"
 version = "0.1.0"
 dependencies = [
+ "audio-waveform-mipmap",
  "basedrop",
  "cpal",
  "dasp_sample",

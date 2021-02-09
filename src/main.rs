@@ -174,6 +174,7 @@ pub enum AppEvent {
 pub struct AppWidget {
     left_channel: Vec<f32>,
     right_channel: Vec<f32>,
+    waveforms: Vec<audio_waveform_mipmap::Waveform>,
     zoom_level: usize,
     scroll_pos: usize,
 
@@ -219,6 +220,7 @@ impl AppWidget {
         Self {
             left_channel: Default::default(),
             right_channel: Default::default(),
+            waveforms: Vec::new(),
             zoom_level: 3,
             scroll_pos: 0,
 
@@ -296,7 +298,7 @@ impl AppWidget {
             *left = interleaved_samples[0];
             *right = interleaved_samples[1];
         }
-
+        
         Ok(())
     }
 
@@ -306,6 +308,7 @@ impl AppWidget {
         state: &mut State,
         entity: Entity,
         data: &[f32],
+        waveform: &audio_waveform_mipmap::Waveform,
         posy: f32,
         height: f32,
         canvas: &mut Canvas<OpenGl>,
@@ -355,103 +358,31 @@ impl AppWidget {
                 canvas.stroke_path(&mut path, paint);
             }
 
-            // Create two paths for min/max and rms
-            let mut path1 = Path::new();
-            let mut path2 = Path::new();
-
-            // Move to the center of the drawing region
-            path1.move_to(x, y + h / 2.0);
-            path2.move_to(x, y + h / 2.0);
-
-            // TODO
-            // Sample-level drawing
-            // if self.samples_per_pixel < 1.0 {
-            //     for pixel in 0..w as u32 {
-            //         let pixels_per_sample = (1.0 / self.samples_per_pixel) as u32;
-
-            //         if pixel % pixels_per_sample == 0 {
-            //             let sample =
-            //                 self.start + (self.samples_per_pixel * pixel as f32).floor() as usize;
-            //             path1.move_to(x + (pixel as f32), y + h / 2.0);
-            //             path1.line_to(
-            //                 x + (pixel as f32),
-            //                 y + h / 2.0 - data[sample as usize] * h / 2.0,
-            //             );
-
-            //             path2.move_to(x + (pixel as f32), y + h / 2.0);
-            //             path2.line_to(
-            //                 x + (pixel as f32),
-            //                 y + h / 2.0 - data[sample as usize] * h / 2.0,
-            //             );
-            //         }
-            //     }
-            // } else {
-
-                let mut chunks = audio.chunks(self.samples_per_pixel);
-
-                for chunk in 0..w as u32 {
-                    if let Some(c) = chunks.next() {
-                        let v_min = *c
-                            .iter()
-                            .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
-                            .unwrap();
-                        let v_max = *c
-                            .iter()
-                            .max_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
-                            .unwrap();
-                        let v_mean: f32 = (c.iter().map(|s| s*s).sum::<f32>() / c.len() as f32).sqrt();
-
-                        match self.units_mode {
-                            UnitsMode::Decibel => {
-                                let v_min_db =
-                                    1.0 + (20.0 * v_min.abs().log10()).max(-60.0) / 60.0;
-                                let v_max_db =
-                                    1.0 + (20.0 * v_max.abs().log10()).max(-60.0) / 60.0;
-
-                                let v_mean_db =
-                                    1.0 + (20.0 * v_mean.abs().log10()).max(-60.0) / 60.0;
-
-                                let v_min_db = if v_min < 0.0 { -v_min_db } else { v_min_db };
-
-                                let v_max_db = if v_max < 0.0 { -v_max_db } else { v_max_db };
-
-                                let v_mean_db = if v_mean < 0.0 { -v_mean_db } else { v_mean_db };
-
-
-
-                                path1.line_to(x + (chunk as f32), y + h / 2.0 - v_min_db * h / 2.0);
-                                path1.line_to(x + (chunk as f32), y + h / 2.0 - v_max_db * h / 2.0);
-
-                                path2.move_to(x + (chunk as f32), y + h / 2.0 + v_mean_db * h / 2.0);
-                                path2.line_to(x + (chunk as f32), y + h / 2.0 - v_mean_db * h / 2.0);
-                            }
-
-                            UnitsMode::Linear => {
-                                path1.line_to(x + (chunk as f32), y + h / 2.0 - v_min * h / 2.0);
-                                path1.line_to(x + (chunk as f32), y + h / 2.0 - v_max * h / 2.0);
-
-                                path2.move_to(x + (chunk as f32), y + h / 2.0 + v_mean * h / 2.0);
-                                path2.line_to(x + (chunk as f32), y + h / 2.0 - v_mean * h / 2.0);
-                            }
-                        }
-                    }
+            let mut path = Path::new();
+            let wd = waveform.query_exact(data, self.start as f64, self.samples_per_pixel as f64 * w as f64, w as usize);
+            // let wd = waveform.query(data, self.start as f64, self.samples_per_pixel as f64 * w as f64, w as usize);
+            let mut prev_done = false;
+            let hh = h / 2.0;
+            for (p_x, p_min, p_max) in wd {
+                // screams for itertools tuple_windows
+                if prev_done {
+                    path.line_to(x + p_x, y + hh - p_max * hh);
+                    path.line_to(x + p_x, y + hh - p_min * hh);
+                    path.close();
                 }
-            //}
-
-            // Draw min/max paths
-            let mut paint = Paint::color(femtovg::Color::rgba(50, 50, 255, 255));
-            paint.set_line_width(1.0);
-            paint.set_anti_alias(false);
-            canvas.stroke_path(&mut path1, paint);
-
-            // Draw rms paths
-            if self.zoom_level < 5 {
-                let mut paint = Paint::color(femtovg::Color::rgba(80, 80, 255, 255));
-                paint.set_line_width(1.0);
-                paint.set_anti_alias(false);
-                canvas.stroke_path(&mut path2, paint);                
+                path.move_to(x + p_x, y + hh - p_min * hh);
+                path.move_to(x + p_x, y + hh - p_max * hh);
+                prev_done = true;
             }
-
+            path.close();
+            let mut paint = Paint::color(femtovg::Color::rgba(50, 50, 255, 255));
+            paint.set_anti_alias(true);
+            canvas.fill_path(&mut path, paint);
+            //let mut paint = Paint::color(femtovg::Color::rgba(50, 50, 255, 255));
+            //paint.set_anti_alias(true);
+            //paint.set_line_width(1.0);
+            //paint.set_line_cap(femtovg::LineCap::Square);
+            //canvas.stroke_path(&mut path, paint);
 
             // TODO
             // Draw cursor
@@ -465,13 +396,8 @@ impl AppWidget {
             //     Paint::color(femtovg::Color::rgba(255, 50, 50, 255)),
             // );
 
-
-          
-
             // Draw selection
             // TODO
-
-
 
             // Draw playhead
             let playhead = self.controller.playhead() as f64;
@@ -1037,6 +963,9 @@ impl EventHandler for AppWidget {
                         self.num_of_channels = file.num_channels;
                         self.sample_rate = file.sample_rate;
                         self.num_of_samples = file.num_samples;
+                        self.waveforms = (0..self.num_of_channels).map(|channel| {
+                            audio_waveform_mipmap::Waveform::new(file.get_channel(channel), Default::default())
+                        }).collect();
                         println!("Length: {} ", self.num_of_samples);
                     }
 
@@ -1065,6 +994,9 @@ impl EventHandler for AppWidget {
                                 self.num_of_channels = file.num_channels;
                                 self.sample_rate = file.sample_rate;
                                 self.num_of_samples = file.num_samples;
+                                self.waveforms = (0..self.num_of_channels).map(|channel| {
+                                    audio_waveform_mipmap::Waveform::new(file.get_channel(channel), Default::default())
+                                }).collect();
                                 println!("Length: {} ", file.num_samples);
                             }
 
@@ -1196,26 +1128,26 @@ impl EventHandler for AppWidget {
 
             match self.channel_mode {
                 ChannelMode::Left => {
-                    self.draw_channel(state, entity, &file.data[0..self.num_of_samples], y, h, canvas);
+                    self.draw_channel(state, entity, file.get_channel(0), &self.waveforms[0], y, h, canvas);
                 }
 
                 ChannelMode::Right => {
-                    self.draw_channel(state, entity, &file.data[self.num_of_samples..self.num_of_samples*2], y, h, canvas);
+                    self.draw_channel(state, entity, file.get_channel(1), &self.waveforms[1], y, h, canvas);
                 }
 
                 ChannelMode::Both => {
-                    self.draw_channel(state, entity, &file.data[0..file.num_samples / 2], y, h / 2.0, canvas);
+                    self.draw_channel(state, entity, file.get_channel(0), &self.waveforms[0], y, h / 2.0, canvas);
                     self.draw_channel(
                         state,
                         entity,
-                        &file.data[(file.num_samples / 2)+1..file.num_samples],
+                        file.get_channel(1),
+                        &self.waveforms[1],
                         y + h / 2.0,
                         h / 2.0,
                         canvas,
                     );
                 }
             }
-
         }
 
 
